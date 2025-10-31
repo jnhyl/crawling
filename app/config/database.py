@@ -1,7 +1,7 @@
 from motor.motor_asyncio import AsyncIOMotorClient
 from beanie import init_beanie
 from app.config import settings
-from app.models import Product, ProductSearchResponse, ApiUsage
+from app.models import Product, ProductSearchResponse
 import logging
 
 logger = logging.getLogger(__name__)
@@ -23,7 +23,7 @@ class Database:
             # Beanie 초기화
             await init_beanie(
                 database=cls.database,
-                document_models=[Product, ProductSearchResponse, ApiUsage]
+                document_models=[Product, ProductSearchResponse]
             )
 
             logger.info(f"Connected to MongoDB: {settings.MONGODB_DB_NAME}")

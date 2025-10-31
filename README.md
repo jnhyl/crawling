@@ -118,10 +118,18 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
 ```
 
-## API 문서
+## 사용 방법
 
-서버 실행 후 다음 주소에서 API 문서를 확인할 수 있습니다:
+서버 실행 후 다음 주소에서 서비스를 이용할 수 있습니다:
 
+### 웹 UI
+- **메인 페이지**: http://localhost:8000
+  - 상품 수집 (키워드당 최대 1,000개 자동 수집)
+  - 상품 검색 (키워드, 가격 범위)
+  - 통계 정보 (총 상품 수, 상위 쇼핑몰)
+  - 상품 목록 및 페이지네이션
+
+### API 문서
 - **Swagger UI**: http://localhost:8000/docs
 - **ReDoc**: http://localhost:8000/redoc
 
@@ -139,12 +147,19 @@ curl -X POST "http://localhost:8000/products/collect?query=갤럭시버즈&max_r
 
 **Parameters:**
 - `query` (required): 검색 키워드
-- `max_results` (optional, default=100): 수집할 최대 상품 수 (1~1000)
+- `max_results` (optional, default=1000): 수집할 최대 상품 수 (1~1000)
 - `sort` (optional, default=sim): 정렬 옵션
   - `sim`: 정확도순
   - `date`: 날짜순
   - `asc`: 가격 오름차순
   - `dsc`: 가격 내림차순
+- `filter` (optional): 필터 옵션
+  - `naverpay`: 네이버페이 연동 상품만
+- `exclude` (optional): 제외 옵션
+  - `used`: 중고 상품 제외
+  - `rental`: 렌탈 상품 제외
+  - `cbshop`: 해외직구/구매대행 상품 제외
+  - 여러 개 조합 가능 (콜론으로 구분): `used:rental:cbshop`
 
 **Response:**
 ```json
@@ -252,6 +267,8 @@ crawlingTest/
 │   └── routes/
 │       ├── __init__.py
 │       └── products.py        # 상품 관련 엔드포인트
+├── templates/
+│   └── index.html             # 웹 UI 템플릿
 ├── main.py                    # FastAPI 애플리케이션 진입점
 ├── requirements.txt           # 의존성 패키지
 ├── .env.example              # 환경 변수 예시

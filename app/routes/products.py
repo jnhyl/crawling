@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query
 from typing import List, Optional
-from app.models import Product, ProductSearchResponse, ApiUsage
+from app.models import Product, ProductSearchResponse
 from app.services import naver_api
 from datetime import datetime
 import logging
@@ -241,34 +241,3 @@ async def get_stats():
     except Exception as e:
         logger.error(f"Error getting stats: {str(e)}")
         raise HTTPException(status_code=500, detail=f"통계 조회 중 오류가 발생했습니다: {str(e)}")
-
-
-@router.get("/stats/api-usage", response_model=dict)
-async def get_api_usage():
-    """
-    당일 API 사용량 조회
-    """
-    try:
-        today = datetime.now().strftime("%Y-%m-%d")
-        usage = await ApiUsage.find_one(ApiUsage.date == today)
-
-        if not usage:
-            return {
-                "date": today,
-                "total_calls": 0,
-                "quota_limit": 25000,  # 네이버 API 기본 일일 한도
-                "quota_remaining": 25000,
-                "last_call_time": None
-            }
-
-        return {
-            "date": usage.date,
-            "total_calls": usage.total_calls,
-            "quota_limit": usage.quota_limit or 25000,
-            "quota_remaining": usage.quota_remaining or (25000 - usage.total_calls),
-            "last_call_time": usage.last_call_time.isoformat() if usage.last_call_time else None
-        }
-
-    except Exception as e:
-        logger.error(f"Error getting API usage: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"API 사용량 조회 중 오류가 발생했습니다: {str(e)}")

@@ -2,7 +2,7 @@ import httpx
 from typing import List, Dict, Any, Optional
 from tenacity import retry, stop_after_attempt, wait_exponential
 from app.config import settings
-from app.models import Product, ApiUsage
+from app.models import Product
 from datetime import datetime
 import logging
 
@@ -67,10 +67,6 @@ class NaverShoppingAPI:
                     timeout=30.0
                 )
                 response.raise_for_status()
-
-                # API 사용량 추적
-                await self._track_api_usage(response.headers)
-
                 return response.json()
 
             except httpx.HTTPStatusError as e:
@@ -198,38 +194,6 @@ class NaverShoppingAPI:
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow()
         )
-
-    @staticmethod
-    async def _track_api_usage(headers: dict):
-        """API 사용량 추적 및 저장"""
-        try:
-            today = datetime.now().strftime("%Y-%m-%d")
-
-            # 오늘 날짜의 사용량 문서 찾기 또는 생성
-            usage = await ApiUsage.find_one(ApiUsage.date == today)
-
-            if usage is None:
-                usage = ApiUsage(
-                    date=today,
-                    total_calls=1,
-                    last_call_time=datetime.now()
-                )
-            else:
-                usage.total_calls += 1
-                usage.last_call_time = datetime.now()
-
-            # 네이버 API 응답 헤더에서 사용량 정보 추출
-            # 실제 헤더 이름은 네이버 API 문서 확인 필요
-            if "X-RateLimit-Limit" in headers:
-                usage.quota_limit = int(headers["X-RateLimit-Limit"])
-            if "X-RateLimit-Remaining" in headers:
-                usage.quota_remaining = int(headers["X-RateLimit-Remaining"])
-
-            await usage.save()
-            logger.info(f"API usage tracked: {usage.total_calls} calls today")
-
-        except Exception as e:
-            logger.error(f"Failed to track API usage: {str(e)}")
 
     @staticmethod
     def _strip_html_tags(text: str) -> str:

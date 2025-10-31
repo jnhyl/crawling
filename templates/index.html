@@ -285,11 +285,6 @@
                 <h3>상위 쇼핑몰</h3>
                 <p id="top-mall" style="font-size: 1.2em;">-</p>
             </div>
-            <div class="stat-card">
-                <h3>API 사용량 (오늘)</h3>
-                <p id="api-usage" style="font-size: 1.2em;">-</p>
-                <p style="font-size: 0.75em; color: #6b7280; margin-top: 5px;" id="api-remaining">-</p>
-            </div>
         </div>
 
         <div class="collect-section">
@@ -344,7 +339,6 @@
         window.onload = function() {
             loadStats();
             loadProducts();
-            loadApiUsage();
         };
 
         // 통계 로드
@@ -357,19 +351,6 @@
                 document.getElementById('top-mall').textContent = data.top_malls[0]?._id || '-';
             } catch (error) {
                 console.error('통계 로드 실패:', error);
-            }
-        }
-
-        // API 사용량 로드
-        async function loadApiUsage() {
-            try {
-                const response = await fetch('/products/stats/api-usage');
-                const data = await response.json();
-
-                document.getElementById('api-usage').textContent = `${data.total_calls.toLocaleString()} / ${data.quota_limit.toLocaleString()}`;
-                document.getElementById('api-remaining').textContent = `남은 호출: ${data.quota_remaining.toLocaleString()}회`;
-            } catch (error) {
-                console.error('API 사용량 로드 실패:', error);
             }
         }
 
@@ -437,7 +418,6 @@
                     `;
                     loadStats();
                     loadProducts();
-                    loadApiUsage();  // API 사용량 업데이트
                 } else {
                     messageDiv.innerHTML = `<div class="error">수집 실패: ${data.detail}</div>`;
                 }
