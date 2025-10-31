@@ -16,7 +16,8 @@ async def collect_products(
     max_results: int = Query(100, ge=1, le=1000, description="수집할 최대 결과 수"),
     sort: str = Query("sim", regex="^(sim|date|asc|dsc)$", description="정렬 옵션 (sim: 정확도, date: 날짜, asc: 가격↑, dsc: 가격↓)"),
     filter: Optional[str] = Query(None, regex="^(naverpay)$", description="필터 옵션 (naverpay: 네이버페이 연동 상품만)"),
-    exclude: Optional[str] = Query(None, description="제외 옵션 (used:중고, rental:렌탈, cbshop:해외직구/구매대행, 콜론으로 구분)")
+    exclude: Optional[str] = Query(None, description="제외 옵션 (used:중고, rental:렌탈, cbshop:해외직구/구매대행, 콜론으로 구분)"),
+    force: bool = Query(False, description="중복 수집 강제 실행 (true: 최근 수집 무시)")
 ):
     """
     네이버 쇼핑 API로 상품 검색 후 MongoDB에 저장
@@ -26,8 +27,39 @@ async def collect_products(
     - **sort**: 정렬 옵션
     - **filter**: 네이버페이 연동 상품만 검색 (naverpay)
     - **exclude**: 제외할 상품 유형 (used:중고, rental:렌탈, cbshop:해외직구)
+    - **force**: 중복 수집 강제 실행 (기본값: false)
     """
     try:
+        # 중복 수집 방지: 이미 수집한 키워드인지 확인
+        if not force:
+            existing_collection = await ProductSearchResponse.find_one(
+                ProductSearchResponse.search_keyword == query
+            )
+
+            if existing_collection:
+                time_diff = datetime.utcnow() - existing_collection.collected_at
+                days = time_diff.days
+                hours = int((time_diff.total_seconds() % 86400) / 3600)
+                minutes = int((time_diff.total_seconds() % 3600) / 60)
+
+                # 경과 시간 메시지 구성
+                if days > 0:
+                    time_message = f"{days}일 {hours}시간"
+                elif hours > 0:
+                    time_message = f"{hours}시간 {minutes}분"
+                else:
+                    time_message = f"{minutes}분"
+
+                return {
+                    "status": "skipped",
+                    "query": query,
+                    "message": f"'{query}' 키워드는 {time_message} 전에 이미 수집되었습니다.",
+                    "last_collected": existing_collection.collected_at.isoformat(),
+                    "total_collected": 0,
+                    "new_products": 0,
+                    "updated_products": 0,
+                    "hint": "force=true 파라미터로 강제 수집 가능"
+                }
         # 필터 옵션 구성
         filter_options = {}
         if filter:
@@ -72,6 +104,7 @@ async def collect_products(
             total_count=len(products),
             display=max_results,
             start=1,
+            sort=sort,
             collected_at=datetime.utcnow()
         )
         await search_history.insert()
@@ -92,7 +125,7 @@ async def collect_products(
         raise HTTPException(status_code=500, detail=f"상품 수집 중 오류가 발생했습니다: {str(e)}")
 
 
-@router.get("/search", response_model=List[Product])
+@router.get("/search", response_model=dict)
 async def search_products(
     keyword: Optional[str] = Query(None, description="검색 키워드 (제목, 브랜드, 제조사)"),
     category1: Optional[str] = Query(None, description="카테고리 1단계"),
@@ -145,11 +178,20 @@ async def search_products(
         # 최종 쿼리 구성
         if query_conditions:
             final_query = {"$and": query_conditions}
+            # 총 개수 계산
+            total_count = await Product.find(final_query).count()
             products = await Product.find(final_query).skip(skip).limit(limit).to_list()
         else:
+            total_count = await Product.count()
             products = await Product.find_all().skip(skip).limit(limit).to_list()
 
-        return products
+        return {
+            "total": total_count,
+            "count": len(products),
+            "skip": skip,
+            "limit": limit,
+            "products": products
+        }
 
     except Exception as e:
         logger.error(f"Error searching products: {str(e)}")
@@ -241,3 +283,68 @@ async def get_stats():
     except Exception as e:
         logger.error(f"Error getting stats: {str(e)}")
         raise HTTPException(status_code=500, detail=f"통계 조회 중 오류가 발생했습니다: {str(e)}")
+
+
+@router.get("/history/recent", response_model=List[dict])
+async def get_recent_collection_history(
+    limit: int = Query(10, ge=1, le=100, description="조회할 이력 수")
+):
+    """
+    최근 수집 이력 조회
+
+    - **limit**: 조회할 이력 수 (기본값: 10)
+    """
+    try:
+        # 최근 수집 이력 조회 (최신순)
+        history = await ProductSearchResponse.find_all() \
+            .sort(-ProductSearchResponse.collected_at) \
+            .limit(limit) \
+            .to_list()
+
+        result = []
+        for item in history:
+            result.append({
+                "keyword": item.search_keyword,
+                "total_count": item.total_count,
+                "sort": item.sort,
+                "collected_at": item.collected_at.isoformat(),
+            })
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Error getting collection history: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"수집 이력 조회 중 오류가 발생했습니다: {str(e)}")
+
+
+@router.get("/history/keyword/{keyword}", response_model=List[dict])
+async def get_keyword_collection_history(
+    keyword: str,
+    limit: int = Query(10, ge=1, le=100, description="조회할 이력 수")
+):
+    """
+    특정 키워드의 수집 이력 조회
+
+    - **keyword**: 검색 키워드
+    - **limit**: 조회할 이력 수 (기본값: 10)
+    """
+    try:
+        # 특정 키워드의 수집 이력 조회 (최신순)
+        history = await ProductSearchResponse.find(
+            ProductSearchResponse.search_keyword == keyword
+        ).sort(-ProductSearchResponse.collected_at).limit(limit).to_list()
+
+        result = []
+        for item in history:
+            result.append({
+                "keyword": item.search_keyword,
+                "total_count": item.total_count,
+                "sort": item.sort,
+                "collected_at": item.collected_at.isoformat(),
+            })
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Error getting keyword history: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"키워드 이력 조회 중 오류가 발생했습니다: {str(e)}")
